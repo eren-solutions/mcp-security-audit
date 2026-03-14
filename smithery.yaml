@@ -1,17 +1,27 @@
-runtime: "container"
+name: mcp-security-audit
+description: "AI-powered code security auditor. Scans GitHub repos for vulnerabilities with OWASP/CWE references and remediation guidance."
+homepage: "https://github.com/eren-solutions/mcp-security-audit"
+icon: "https://raw.githubusercontent.com/eren-solutions/mcp-security-audit/main/icon.svg"
 startCommand:
-  type: "http"
-configSchema:
-  type: "object"
-  properties:
-    apiKey:
-      type: "string"
-      description: "API key for the Eren Security Auditor service"
-    endpoint:
-      type: "string"
-      description: "Audit API endpoint URL"
-  required:
-    - apiKey
-build:
-  dockerfile: "Dockerfile"
-  dockerBuildPath: "."
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      endpoint:
+        type: string
+        title: "Audit API Endpoint"
+        description: "Base URL of the security audit API"
+      apiKey:
+        type: string
+        title: "API Key"
+        description: "API key for authentication (optional for public endpoint)"
+    required: []
+  commandFunction: |-
+    (config) => ({
+      command: "python3",
+      args: ["server.py", "--transport", "stdio"],
+      env: {
+        AUDIT_ENDPOINT: config.endpoint || "",
+        AUDIT_API_KEY: config.apiKey || ""
+      }
+    })
