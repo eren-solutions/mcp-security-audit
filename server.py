@@ -4,6 +4,11 @@ Eren Security Auditor — MCP Server.
 AI-powered code security auditor exposed via the Model Context Protocol (MCP).
 Scans GitHub repositories for vulnerabilities using LLM-powered analysis and
 returns structured findings with OWASP/CWE references and remediation guidance.
+
+Payment tiers (x402-compatible):
+  Free tier  — SCAN_FREE_TIER scans/day per session (default: 1)
+  Paid tier  — unlimited with valid X-API-Key header
+  Payment    — HTTP 402 body with USDC/Base instructions when limit hit
 """
 
 import json
@@ -17,8 +22,12 @@ from typing import Any, Annotated
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
+from billing import BillingGate
+
 AUDIT_ENDPOINT = os.environ.get("AUDIT_ENDPOINT", "")
 AUDIT_API_KEY = os.environ.get("AUDIT_API_KEY", "")
+
+_billing = BillingGate()
 
 mcp = FastMCP(
     "Eren Security Auditor",
@@ -79,8 +88,24 @@ def _poll_audit(audit_id: str, max_polls: int = 120, interval: int = 5) -> dict:
 def security_scan(
     repo_url: Annotated[str, Field(description="GitHub repository URL to scan, e.g. https://github.com/owner/repo.")],
     branch: Annotated[str, Field(description="Git branch to scan. Defaults to main.")] = "main",
+    api_key: Annotated[str, Field(description="Optional paid API key (X-API-Key) for unlimited scans.")] = "",
+    client_ip: Annotated[str, Field(description="Client IP address for free tier tracking (set by proxy).")] = "",
+    session_id: Annotated[str, Field(description="Optional session ID for free tier tracking.")] = "",
 ) -> str:
-    """Run a full security audit on a GitHub repository. Clones the repo, scans source files with LLM-powered analysis, returns OWASP/CWE findings with remediation. Takes 1-10 minutes."""
+    """Run a full security audit on a GitHub repository. Clones the repo, scans source files with LLM-powered analysis, returns OWASP/CWE findings with remediation. Takes 1-10 minutes. Free tier: 1 scan/day. Add X-API-Key for unlimited access."""
+    # ── billing gate ──────────────────────────────────────────────────────────
+    allowed, reason = _billing.check(
+        api_key=api_key,
+        client_ip=client_ip,
+        session_id=session_id,
+    )
+    if not allowed:
+        if reason == "api_key_invalid":
+            return json.dumps({"error": "Invalid API key. Check X-API-Key header."}, indent=2)
+        # Free tier exhausted — return x402-style 402 payload
+        payload = _billing.payment_required_payload()
+        return json.dumps(payload, indent=2)
+    # ── scan ─────────────────────────────────────────────────────────────────
     submit = _api_call("POST", "/v1/audit", {"repo_url": repo_url, "branch": branch})
     if "error" in submit:
         return json.dumps({"error": submit["error"]}, indent=2)
@@ -218,7 +243,11 @@ def scan_workflow() -> str:
         "4. Follow remediation recommendations\n"
         "5. Use audit_status if scan was interrupted\n\n"
         "Checks: SQL injection, XSS, command injection, path traversal, "
-        "hardcoded secrets, insecure crypto, SSRF, and more."
+        "hardcoded secrets, insecure crypto, SSRF, and more.\n\n"
+        "Access tiers:\n"
+        f"- Free: {os.environ.get('SCAN_FREE_TIER', '1')} scan/day (no key needed)\n"
+        "- Paid: unlimited scans — pass api_key parameter or set X-API-Key\n"
+        "- Payment: if limit hit, response includes payment instructions (x402)"
     )
 
 

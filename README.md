@@ -63,6 +63,35 @@ docker run -p 8200:8200 -e AUDIT_ENDPOINT=https://your-api-host -e AUDIT_API_KEY
 | `AUDIT_API_KEY` | *(required)* | API key for authentication |
 | `PORT` | `8200` | HTTP server port |
 | `HOST` | `0.0.0.0` | HTTP bind address |
+| `SCAN_FREE_TIER` | `1` | Free scans per day per client |
+| `SCAN_PRICE_USD` | `0.25` | Price in USD for paid scan (x402 payload) |
+| `SCAN_WALLET_ADDRESS` | *(empty)* | USDC/Base wallet address for payment instructions |
+| `MCP_BILLING_DB` | `/opt/mcp-audit/billing.db` | SQLite path for rate limit + API key data |
+| `MCP_BILLING_ENABLED` | `true` | Set to `false` to disable billing entirely |
+
+## Access Tiers
+
+**Free tier**: `SCAN_FREE_TIER` scans/day per session (default: 1). No key needed.
+
+**Paid tier**: Unlimited scans. Pass an API key as the `api_key` parameter or in the `X-API-Key` header. Keys are generated after BTC payment confirmation.
+
+**Payment required (x402)**: When the free tier is exhausted and no valid API key is provided, `security_scan` returns a JSON payload with HTTP 402 semantics:
+
+```json
+{
+  "error": "payment_required",
+  "http_status": 402,
+  "message": "Free tier exhausted (1 scan/day). Add X-API-Key header with a paid key, or pay $0.25 USDC to scan.",
+  "free_tier": { "scans_per_day": 1, "resets": "00:00 UTC" },
+  "payment": {
+    "price": "0.25",
+    "currency": "USDC",
+    "network": "base",
+    "address": "YOUR_WALLET_ADDRESS",
+    "message": "Pay $0.25 USDC on Base to https://eren-solutions.com/audit/pay"
+  }
+}
+```
 
 ## Example Usage
 
